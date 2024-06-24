@@ -13,6 +13,13 @@ use OFFLINE\Mall\Models\Product;
 trait MenuItems
 {
     /**
+     * Array for local cache to reduce queries to DB
+     *
+     * @var array
+     */
+    public static $cachedCategories = [];
+
+    /**
      * @param $item
      * @param $url
      * @param $theme
@@ -22,15 +29,21 @@ trait MenuItems
      */
     public static function resolveCategoryItem($item, $url, $theme)
     {
-        $category = self::find($item->reference);
-        if ( ! $category) {
+        if (isset(self::$cachedCategories[$item->reference]) && !empty(self::$cachedCategories[$item->reference])) {
+            $category = self::$cachedCategories[$item->reference];
+        } else {
+            $category = self::find($item->reference);
+            self::$cachedCategories[$item->reference] = $category;
+        }
+
+        if (!$category) {
             return;
         }
 
         // Replace this menu item with its products.
         if ($item->replace) {
             $page = GeneralSettings::get('product_page', 'product');
-            if ( ! Page::loadCached($theme, $page)) {
+            if (!Page::loadCached($theme, $page)) {
                 return;
             }
 
@@ -67,6 +80,8 @@ trait MenuItems
             Cache::forget($this->treeCacheKey($locale));
             Cache::forget($this->mapCacheKey($locale));
         }
+
+        self::$cachedCategories = [];
     }
 
     /**
@@ -84,8 +99,11 @@ trait MenuItems
 
         if (Cache::has($category->treeCacheKey($locale))) {
             return $category->setActiveMenuItem(
-                Cache::get($category->treeCacheKey($locale)
-                ), $url);
+                Cache::get(
+                    $category->treeCacheKey($locale)
+                ),
+                $url
+            );
         }
 
         $structure = [];
@@ -123,7 +141,7 @@ trait MenuItems
      */
     protected static function getMenuItem($item, $url)
     {
-        if ( ! $pageUrl = GeneralSettings::get('category_page')) {
+        if (!$pageUrl = GeneralSettings::get('category_page')) {
             throw new InvalidArgumentException(
                 'Mall: Please select a category page via the backend settings.'
             );
@@ -173,7 +191,7 @@ trait MenuItems
         $iterator = function ($categories) use (&$iterator) {
             $result = [];
             foreach ($categories as $category) {
-                if ( ! $category->children) {
+                if (!$category->children) {
                     $result[$category->id] = $category->name;
                 } else {
                     $result[$category->id] = [
